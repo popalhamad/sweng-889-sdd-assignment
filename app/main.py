@@ -10,10 +10,11 @@ a router there and including it below.
 from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.model_client import ModelError, ModelTimeout
-from app.routes import libraries, summary
+from app.routes import libraries, summary, tickets
 
 app = FastAPI(
     title="Facilities API",
@@ -26,9 +27,23 @@ app = FastAPI(
 # or the path-parameter route captures the literal path "summary" first.
 app.include_router(summary.router)
 app.include_router(libraries.router)
+app.include_router(tickets.router)
 
 
-_ERROR_CODES = {404: "not_found", 409: "conflict", 503: "model_unavailable", 504: "model_timeout"}
+_ERROR_CODES = {
+    422: "validation_error",
+    404: "not_found",
+    409: "conflict",
+    503: "model_unavailable",
+    504: "model_timeout",
+}
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Keep malformed requests on the repository's ErrorBody contract."""
+    detail = "; ".join(error["msg"] for error in exc.errors())
+    return JSONResponse(status_code=422, content={"detail": detail, "code": "validation_error"})
 
 
 @app.exception_handler(HTTPException)

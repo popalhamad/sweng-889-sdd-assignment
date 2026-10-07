@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Kind = Literal["central", "branch", "bookmobile", "research"]
+TicketCategory = Literal["billing", "access", "data", "outage", "general"]
+TicketPriority = Literal["high", "normal", "low"]
+TicketTeam = Literal["finance-ops", "identity", "data-platform", "platform-sre", "triage"]
+TicketStatus = Literal["awaiting_review", "accepted", "changed"]
 
 
 class Library(BaseModel):
@@ -67,6 +71,58 @@ class ErrorBody(BaseModel):
 
     detail: str
     code: str
+
+
+class TicketCreate(BaseModel):
+    """A ticket submitted for model-assisted triage."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    subject: str = Field(min_length=1, max_length=1000)
+    body: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("subject", "body")
+    @classmethod
+    def require_non_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("ticket text must not be empty")
+        return value
+
+
+class TicketRecommendation(BaseModel):
+    """The original model recommendation and the values available to a human."""
+
+    category: TicketCategory
+    priority: TicketPriority
+    team: TicketTeam
+    draft_reply: str = Field(min_length=1, max_length=1000)
+
+
+class Ticket(BaseModel):
+    """A queued ticket with its current human-review state."""
+
+    id: str
+    category: TicketCategory
+    priority: TicketPriority
+    team: TicketTeam
+    confidence: float = Field(ge=0.0, le=1.0)
+    model_version: str = Field(min_length=1)
+    status: TicketStatus
+    draft_reply: str = Field(min_length=1, max_length=1000)
+    reply_sent: bool
+    suggested: TicketRecommendation
+
+
+class TicketReview(BaseModel):
+    """A human decision to accept or replace a queued recommendation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["accept", "change"]
+    category: Optional[TicketCategory] = None
+    priority: Optional[TicketPriority] = None
+    team: Optional[TicketTeam] = None
+    draft_reply: Optional[str] = Field(default=None, min_length=1, max_length=1000)
 
 
 class SummaryResponse(BaseModel):
